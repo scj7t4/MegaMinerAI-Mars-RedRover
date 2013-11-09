@@ -44,10 +44,12 @@ class Pathfinder(object):
                     or tile.waterAmount > 0):
                     #                    or (tile.owner == ai.playerID 
                 self.obstacles[(tile.x,tile.y)] = tile  
-            elif tile.owner == ai.enemyID or tile.owner == ai.playerID and tile.pumpID == -1 and bloomspawns:
+            """
+            elif tile.owner == ai.enemyID or tile.owner == ai.playerID and tile.pumpID == -1 and bloomspawns and FAL:
                 bloom = [ (tile.x+x, tile.y+y) for x in range(-1,2) for y in range(-1,2) ]
                 for k in bloom:
                     self.obstacles[k] = tile
+            """
         while consider not in ends and len(openset):
             (_,consider) = heappop(openset)
             for cell in self.adj[consider]:
@@ -73,7 +75,7 @@ class AI(BaseAI):
     """The class implementing gameplay logic."""
 
     WORKER, SCOUT, TANK = range(3)
-    CANALDEPTH = 3
+    
     MAX_WORKERS = 4
     MAX_TANKS = 0
     MAX_SCOUTS = 2
@@ -97,6 +99,7 @@ class AI(BaseAI):
                 self.SCOUTCOST = u.cost
             elif u.type == self.TANK:
                 self.TANKCOST = u.cost
+        self.CANALDEPTH = 6
         pass
 
     ##This function is called once, after your last turn
@@ -107,6 +110,8 @@ class AI(BaseAI):
   ##This function is called each time it is your turn
   ##Return true to end your turn, return false to ask the server for updated information
     def run(self):
+    
+        self.players[self.playerID].talk("ANARCHY!!!!!!!")
     
         print "Turn {}".format(self.turnNumber)
         
@@ -153,7 +158,7 @@ class AI(BaseAI):
                 closedset.add(consider)
                 adjtiles = [ tilemap[ t ] for t in self.pf.adj[ consider ] if tilemap[ t ].owner != 3 ]
                 for adj in adjtiles:
-                    if adj.depth > 0 :
+                    if adj.depth > 1 or (adj.depth == 1 and adj.turnsUntilDeposit > 3):
                         c = (adj.x, adj.y)
                         flow.add( c )
                         openset.add( c)
@@ -191,17 +196,25 @@ class AI(BaseAI):
                         tile.spawn(self.TANK)
                         spawned_tanks += 1
 
+        
+        MAX_CONNECT = 15
         digdests = set()
-        for icecube in glaciers:
-            expandedpumps = list(expandglaciers(mypumptiles))
-            expandedice = list(expandglaciers([ icecube ]))
-            r = self.pf.astar( self, expandedpumps, expandedice, bloomspawns = True)
-            if len(r) > 15:
-                continue
-            for step in r:
-                if tilemap[step].depth < self.CANALDEPTH:
-                    digdests.add(step)
-                    break
+        for _ in range(5):
+            digdests = set()
+            for icecube in glaciers:
+                expandedpumps = list(expandglaciers(mypumptiles))
+                expandedice = list(expandglaciers([ icecube ]))
+                r = self.pf.astar( self, expandedpumps, expandedice, bloomspawns = True)
+                if len(r) > MAX_CONNECT:
+                    continue
+                for step in r:
+                    if tilemap[step].depth < self.CANALDEPTH:
+                        digdests.add(step)
+                        break
+            if len(digdests) < len(myworkers):
+                MAX_CONNECT += 5
+            else:
+                break
             
         for worker in myworkers:
             path = self.pf.astar(self, o2tuple([worker]), list(digdests))
