@@ -20,7 +20,7 @@ class Pathfinder(object):
                 adj = [ (i+1,j) , (i-1,j) , (i,j+1), (i, j-1) ]
                 adj = [ c for c in adj if c[0] >= 0 and c[0] < mapwidth and c[1] >= 0 and c[1] < mapheight ]
                 self.adj[(i,j)] = adj
-    def astar(self, ai, starts, ends):
+    def astar(self, ai, starts, ends, bloomspawns=False):
         #TODO: Penalize Water
         openset = []
         closedset = {}
@@ -41,9 +41,13 @@ class Pathfinder(object):
         for tile in ai.tiles:
             if ( tile.owner == ai.enemyID
                     or tile.owner == 3
-                    or tile.owner == ai.playerID
                     or tile.waterAmount > 0):
+                    #                    or (tile.owner == ai.playerID 
                 self.obstacles[(tile.x,tile.y)] = tile  
+            elif tile.owner == ai.enemyID or tile.owner == ai.playerID and tile.pumpID == -1 and bloomspawns:
+                bloom = [ (tile.x+x, tile.y+y) for x in range(-1,2) for y in range(-1,2) ]
+                for k in bloom:
+                    self.obstacles[k] = tile
         while consider not in ends and len(openset):
             (_,consider) = heappop(openset)
             for cell in self.adj[consider]:
@@ -69,7 +73,7 @@ class AI(BaseAI):
     """The class implementing gameplay logic."""
 
     WORKER, SCOUT, TANK = range(3)
-    CANALDEPTH = 2
+    CANALDEPTH = 3
     MAX_WORKERS = 4
     MAX_TANKS = 0
     MAX_SCOUTS = 2
@@ -147,7 +151,7 @@ class AI(BaseAI):
                 if consider in closedset:
                     continue
                 closedset.add(consider)
-                adjtiles = [ tilemap[ t ] for t in self.pf.adj[ consider ] ]
+                adjtiles = [ tilemap[ t ] for t in self.pf.adj[ consider ] if tilemap[ t ].owner != 3 ]
                 for adj in adjtiles:
                     if adj.depth > 0 :
                         c = (adj.x, adj.y)
@@ -179,16 +183,19 @@ class AI(BaseAI):
                     #spawn the unit
                     if spawned_scouts + len(myscouts) < self.MAX_SCOUTS and self.players[self.playerID].oxygen >= self.WORKERCOST:
                         tile.spawn(self.SCOUT)
+                        spawned_scouts += 1
                     elif spawned_workers + len(myworkers) < self.MAX_WORKERS and self.players[self.playerID].oxygen >= self.SCOUTCOST:
                         tile.spawn(self.WORKER)
+                        spawned_workers += 1
                     elif spawned_tanks + len(mytanks) < self.MAX_TANKS and self.players[self.playerID].oxygen >= self.TANKCOST:
                         tile.spawn(self.TANK)
+                        spawned_tanks += 1
 
         digdests = set()
         for icecube in glaciers:
             expandedpumps = list(expandglaciers(mypumptiles))
             expandedice = list(expandglaciers([ icecube ]))
-            r = self.pf.astar( self, expandedpumps, expandedice)
+            r = self.pf.astar( self, expandedpumps, expandedice, bloomspawns = True)
             if len(r) > 15:
                 continue
             for step in r:
@@ -202,7 +209,7 @@ class AI(BaseAI):
                 worker.dig(tilemap[ (worker.x,worker.y) ])
             while worker.movementLeft > 0 and len(path) > 0:        
                 (x,y) = path.pop(0)
-                if (x,y) not in digdests:
+                if (x,y) not in digdests and worker.movementLeft > 0:
                     worker.move(x,y)
                 elif not worker.hasDug:
                     worker.dig(tilemap[(x,y)])
@@ -212,18 +219,24 @@ class AI(BaseAI):
             attackables = filter(lambda e: distance( (worker.x,worker.y), (e.x, e.y) ) <= 3, enemyunits )
             if len(attackables) > 0 and not worker.hasAttacked:
                 worker.attack(attackables[0])
+            if not worker.hasDug:
+                worker.dig( tilemap[(worker.x,worker.y)] )
         
-        for scout in myscouts:
-            path = self.pf.astar(self, o2tuple([scout]), o2tuple(enemyscouts+enemytanks) )
-            for (x,y) in path:
-                attackables = filter(lambda e: distance( (scout.x,scout.y), (e.x, e.y) ) == 1, enemyscouts+enemytanks)
-                if len(attackables) > 0 and not scout.hasAttacked:
-                    scout.attack(attackables[0])
-                    break
-                if scout.movementLeft > 0:
-                    scout.move( x,y )
-                else:
-                    break
+        for priority in [ enemyscouts + enemytanks, enemyworkers ]:
+            if len(priority) == 0:
+                continue
+            for scout in myscouts:
+                priority = [ t for t in priority if t.healthLeft > 0 ]
+                path = self.pf.astar(self, o2tuple([scout]), o2tuple(priority + enemypumptiles) )
+                for (x,y) in path:
+                    attackables = filter(lambda e: distance( (scout.x,scout.y), (e.x, e.y) ) == 1, priority)
+                    if len(attackables) > 0 and not scout.hasAttacked:
+                        scout.attack(attackables[0])
+                        break
+                    if scout.movementLeft > 0:
+                        scout.move( x,y )
+                    else:
+                        break
         return 1
 
     def __init__(self, conn):
