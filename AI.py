@@ -70,6 +70,9 @@ class AI(BaseAI):
 
     WORKER, SCOUT, TANK = range(3)
     CANALDEPTH = 2
+    MAX_WORKERS = 4
+    MAX_TANKS = 0
+    MAX_SCOUTS = 2
 
     @staticmethod
     def username():
@@ -83,6 +86,13 @@ class AI(BaseAI):
     def init(self):
         self.enemyID = 1 if self.playerID == 0 else 0
         self.pf = Pathfinder(self.mapWidth, self.mapHeight)
+        for u in self.unitTypes:
+            if u.type == self.WORKER:
+                self.WORKERCOST = u.cost
+            elif u.type == self.SCOUT:
+                self.SCOUTCOST = u.cost
+            elif u.type == self.TANK:
+                self.TANKCOST = u.cost
         pass
 
     ##This function is called once, after your last turn
@@ -145,14 +155,13 @@ class AI(BaseAI):
                         openset.add( c)
             return flow
         
-        for tile in myspawns + mypumptiles:
+        spawned_workers = 0
+        spawned_scouts = 0
+        spawned_tanks = 0
+        for tile in mypumptiles+myspawns:
             #if this tile is my spawn tile or my pump station
-            cost = 0
-            for u in self.unitTypes:
-              if u.type == self.WORKER:
-                cost = u.cost
             #if there is enough oxygen to spawn the unit
-            if self.players[self.playerID].oxygen >= cost and len(myunits) < self.maxUnits:
+            if len(myunits) < self.maxUnits:
                 #if nothing is spawning on the tile
                 if tile.isSpawning == 0:
                   canSpawn = True
@@ -168,7 +177,12 @@ class AI(BaseAI):
                       canSpawn = False
                   if canSpawn:
                     #spawn the unit
-                    tile.spawn(self.WORKER)
+                    if spawned_scouts + len(myscouts) < self.MAX_SCOUTS and self.players[self.playerID].oxygen >= self.WORKERCOST:
+                        tile.spawn(self.SCOUT)
+                    elif spawned_workers + len(myworkers) < self.MAX_WORKERS and self.players[self.playerID].oxygen >= self.SCOUTCOST:
+                        tile.spawn(self.WORKER)
+                    elif spawned_tanks + len(mytanks) < self.MAX_TANKS and self.players[self.playerID].oxygen >= self.TANKCOST:
+                        tile.spawn(self.TANK)
 
         digdests = set()
         for icecube in glaciers:
@@ -186,7 +200,7 @@ class AI(BaseAI):
             path = self.pf.astar(self, o2tuple([worker]), list(digdests))
             if len(path) == 0 and (worker.x,worker.y) in digdests:
                 worker.dig(tilemap[ (worker.x,worker.y) ])
-            while worker.movementLeft > 0 and len(path) > 0:
+            while worker.movementLeft > 0 and len(path) > 0:        
                 (x,y) = path.pop(0)
                 if (x,y) not in digdests:
                     worker.move(x,y)
@@ -195,7 +209,21 @@ class AI(BaseAI):
                     digdests.remove( (x,y) )
                 else: 
                     break
+            attackables = filter(lambda e: distance( (worker.x,worker.y), (e.x, e.y) ) <= 3, enemyunits )
+            if len(attackables) > 0 and not worker.hasAttacked:
+                worker.attack(attackables[0])
         
+        for scout in myscouts:
+            path = self.pf.astar(self, o2tuple([scout]), o2tuple(enemyscouts+enemytanks) )
+            for (x,y) in path:
+                attackables = filter(lambda e: distance( (scout.x,scout.y), (e.x, e.y) ) == 1, enemyscouts+enemytanks)
+                if len(attackables) > 0 and not scout.hasAttacked:
+                    scout.attack(attackables[0])
+                    break
+                if scout.movementLeft > 0:
+                    scout.move( x,y )
+                else:
+                    break
         return 1
 
     def __init__(self, conn):
