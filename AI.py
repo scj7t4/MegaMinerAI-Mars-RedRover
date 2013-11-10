@@ -20,7 +20,7 @@ class Pathfinder(object):
                 adj = [ (i+1,j) , (i-1,j) , (i,j+1), (i, j-1) ]
                 adj = [ c for c in adj if c[0] >= 0 and c[0] < mapwidth and c[1] >= 0 and c[1] < mapheight ]
                 self.adj[(i,j)] = adj
-    def astar(self, ai, starts, ends, bloomspawns=False):
+    def astar(self, ai, starts, ends, bloomspawns=False, fearwater=False):
         #TODO: Penalize Water
         openset = []
         closedset = {}
@@ -41,7 +41,7 @@ class Pathfinder(object):
         for tile in ai.tiles:
             if ( tile.owner == ai.enemyID
                     or tile.owner == 3
-                    or tile.waterAmount > 0):
+                    or (tile.waterAmount > 0 and fearwater == True)):
                     #                    or (tile.owner == ai.playerID 
                 self.obstacles[(tile.x,tile.y)] = tile  
             """
@@ -110,6 +110,9 @@ class AI(BaseAI):
   ##This function is called each time it is your turn
   ##Return true to end your turn, return false to ask the server for updated information
     def run(self):
+        if self.turnNumber > 200:
+            self.CANALDEPTH = 11
+    
     
         self.players[self.playerID].talk("ANARCHY!!!!!!!")
     
@@ -204,20 +207,25 @@ class AI(BaseAI):
             for icecube in glaciers:
                 expandedpumps = list(expandglaciers(mypumptiles))
                 expandedice = list(expandglaciers([ icecube ]))
-                r = self.pf.astar( self, expandedpumps, expandedice, bloomspawns = True)
+                r = self.pf.astar( self, expandedpumps, expandedice, bloomspawns = True)[:-1]
                 if len(r) > MAX_CONNECT:
                     continue
                 for step in r:
                     if tilemap[step].depth < self.CANALDEPTH:
                         digdests.add(step)
                         break
-            if len(digdests) < len(myworkers):
+                r.reverse()
+                for step in r:
+                    if tilemap[step].depth < self.CANALDEPTH:
+                        digdests.add(step)
+                        break
+            if len(digdests) < len(myworkers) * 2:
                 MAX_CONNECT += 5
             else:
                 break
             
         for worker in myworkers:
-            path = self.pf.astar(self, o2tuple([worker]), list(digdests))
+            path = self.pf.astar(self, o2tuple([worker]), list(digdests), fearwater=True)
             if len(path) == 0 and (worker.x,worker.y) in digdests:
                 worker.dig(tilemap[ (worker.x,worker.y) ])
             while worker.movementLeft > 0 and len(path) > 0:        
@@ -225,6 +233,12 @@ class AI(BaseAI):
                 if (x,y) not in digdests and worker.movementLeft > 0:
                     worker.move(x,y)
                 elif not worker.hasDug:
+                    if worker.movementLeft:
+                        d = [ coord for coord in self.pf.adj[ (x,y) ] if tilemap[coord].depth == 0 and tilemap[coord].owner != 3 and tilemap[coord].owner != self.enemyID ]
+                        subp = self.pf.astar(self, o2tuple([worker]), d, fearwater = True)
+                        if len(subp) <= worker.movementLeft:
+                            for (xs,ys) in subp:
+                                worker.move(xs,ys)
                     worker.dig(tilemap[(x,y)])
                     digdests.remove( (x,y) )
                 else: 
@@ -232,15 +246,19 @@ class AI(BaseAI):
             attackables = filter(lambda e: distance( (worker.x,worker.y), (e.x, e.y) ) <= 3, enemyunits )
             if len(attackables) > 0 and not worker.hasAttacked:
                 worker.attack(attackables[0])
-            if not worker.hasDug:
-                worker.dig( tilemap[(worker.x,worker.y)] )
+            #if not worker.hasDug:
+            #    worker.dig( tilemap[(worker.x,worker.y)] )
         
         for priority in [ enemyscouts + enemytanks, enemyworkers ]:
             if len(priority) == 0:
                 continue
             for scout in myscouts:
                 priority = [ t for t in priority if t.healthLeft > 0 ]
-                path = self.pf.astar(self, o2tuple([scout]), o2tuple(priority + enemypumptiles) )
+                ctiles = [ c for c in enemypumptiles if distance( (scout.x, scout.y), (c.x, c.y) ) != 0]
+                ontiles = [ (c.x,c.y) for c in enemypumptiles if distance( (scout.x, scout.y), (c.x, c.y) ) == 0]
+                path = self.pf.astar(self, o2tuple([scout]), o2tuple(priority + ctiles) , fearwater=True)
+                if (scout.x, scout.y) in ontiles and len(path) > 1:
+                    path = []
                 for (x,y) in path:
                     attackables = filter(lambda e: distance( (scout.x,scout.y), (e.x, e.y) ) == 1, priority)
                     if len(attackables) > 0 and not scout.hasAttacked:
@@ -250,6 +268,10 @@ class AI(BaseAI):
                         scout.move( x,y )
                     else:
                         break
+                attackables = filter(lambda e: distance( (scout.x,scout.y), (e.x, e.y) ) == 1, priority)
+                if len(attackables) > 0 and not scout.hasAttacked:
+                    scout.attack(attackables[0])
+                    break
         return 1
 
     def __init__(self, conn):
