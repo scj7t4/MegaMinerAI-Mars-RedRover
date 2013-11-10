@@ -293,7 +293,7 @@ class AI(BaseAI):
             for tank in mytanks:
                 priority = [ t for t in priority if t.healthLeft > 0 ]
                 ctiles = [ c for c in mypumptiles if distance( (tank.x, tank.y), (c.x, c.y) ) != 0 and pumpdict[ c.pumpID ].siegeAmount > 0]
-                ontiles = [ (c.x,c.y) for c in mypumptiles if distance( (tank.x, tank.y), (c.x, c.y) ) == 0]
+                ontiles = [ (c.x,c.y) for c in mypumptiles if distance( (tank.x, tank.y), (c.x, c.y) ) == 0 and pumpdict[ c.pumpID ].siegeAmount > 0]
                 path = self.pf.astar(self, o2tuple([tank]), o2tuple(priority + ctiles) , fearwater=True)
                 if (tank.x, tank.y) in ontiles and len(path) > tank.movementLeft:
                     path = []
