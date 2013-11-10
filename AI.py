@@ -2,6 +2,7 @@
 from BaseAI import BaseAI
 from GameObject import *
 from heapq import *
+from datetime import datetime
 
 def distance(point1, point2):
     return abs(point1[0]-point2[0])+abs(point1[1]-point2[1])
@@ -102,13 +103,46 @@ class AI(BaseAI):
         self.MAX_TANKS = 1
         self.MAX_SCOUTS = 5
 
+        self.sw_dict = {}
+        
         pass
 
     ##This function is called once, after your last turn
     def end(self):
+        self.sw_summary()
         pass
         
-
+    def sw_start(self):
+        self.sw_run = datetime.today()
+        self.last = datetime.today()
+    
+    def sw_lap(self,lapname):
+        current = datetime.today()
+        te = current - self.last
+        try:
+            self.sw_dict[lapname].append(te)
+        except KeyError:
+            self.sw_dict[lapname] = [te]
+        self.last = current
+    
+    def sw_stop(self):
+        te = datetime.today() - self.sw_run
+        try:
+            self.sw_dict["turn time"].append(te)
+        except:
+            self.sw_dict["turn time"] = [te]
+            
+    def sw_summary(self):
+        try:
+            print "SW\tAverage\tTotal\tLast"
+            for k in self.sw_dict:
+                last = self.sw_dict[k][-1].total_seconds()
+                total = sum([ t.total_seconds() for t in self.sw_dict[k] ])
+                average = total / len(self.sw_dict[k])
+                print "{}\t{}\t{}\t{}".format(k, average, total, last)
+        except AttributeError:
+            print "sw_dict isn't ready"
+            
   ##This function is called each time it is your turn
   ##Return true to end your turn, return false to ask the server for updated information
     def run(self):
@@ -116,6 +150,7 @@ class AI(BaseAI):
             self.CANALDEPTH = 11
     
         print "Turn {}".format(self.turnNumber)
+        self.sw_start()
         
         path = self.pf.astar(self,[ (0,0) ], [ (5,5) ])
         
@@ -155,6 +190,8 @@ class AI(BaseAI):
                 self.unitmap[(u.x,u.y)] = u
         updateunitmap()
         
+        self.sw_lap("Dictionaries/Lists")
+        
         def expandglaciers(icecubes):
             flow = set()
             openset = set()
@@ -175,22 +212,21 @@ class AI(BaseAI):
                             openset.add(c)
             return flow
                 
-            
-        connectedenemypumps = []
-        for ept in enemypumptiles:
-            expandedpumps = expandglaciers([ept])
-            for icecube in glaciers:
-                expandedice = expandglaciers([ icecube ])
-                if len(expandedice & expandedpumps):
-                    connectedenemypumps.append(ept)
+        connectedmypumps = set()
+        connectedenemypumps = set()
         
-        connectedmypumps = []
-        for pt in mypumptiles:
-            expandedpumps = expandglaciers([pt])
-            for icecube in glaciers:
-                expandedice = expandglaciers([ icecube ])
-                if len(expandedice & expandedpumps):
-                    connectedmypumps.append(pt)
+        expandedice = expandglaciers(glaciers)
+        for tile in expandedice:
+            adj = self.pf.adj[ tile ]
+            for adj in tilemap:
+                consider = tilemap[adj]
+                if consider.pumpID != -1 and consider.owner == self.playerID:
+                    connectedmypumps.add(consider)
+                elif consider.pumpID != -1 and consider.owner == self.enemyID:
+                    connectedenemypumps.add(consider)
+        
+        connectedmypumps = list(connectedmypumps)
+        connectedenemypumps = list(connectedenemypumps)
 
         myconnectedstations = set()
         enemyconnectedstations = set()
@@ -198,6 +234,8 @@ class AI(BaseAI):
             myconnectedstations.add(c.pumpID)
         for c in connectedenemypumps:
             enemyconnectedstations.add(c.pumpID)
+            
+        self.sw_lap("DetectingConnectedPumps")
         
         self.MAX_TANKS = min(2, len(myconnectedstations))
         self.MAX_SCOUTS = (75 - self.MAX_TANKS * 15) / 12
@@ -261,6 +299,8 @@ class AI(BaseAI):
         while spawned_workers + len(myworkers) < self.MAX_WORKERS and spawnunit( self.WORKER, workerspawns):
             spawned_workers += 1
         
+        self.sw_lap("SpawnUnits")
+        
         if len(myworkers) > 0:
             MAX_CONNECT = 300
             digdests = set()
@@ -279,6 +319,8 @@ class AI(BaseAI):
                     if tilemap[step].depth < self.CANALDEPTH:
                         digdests.add(step)
                         break
+        
+        self.sw_lap("ProposeChannels")
         
         for worker in myworkers:
             donesomething = False
@@ -312,6 +354,8 @@ class AI(BaseAI):
             #if not worker.hasDug:
             #    worker.dig( tilemap[(worker.x,worker.y)] )
         
+        self.sw_lap("WorkerAI")
+        
         for scout in myscouts:
             priority = [ t for t in enemyunits if t.healthLeft > 0 ]
             updateunitmap()
@@ -344,6 +388,8 @@ class AI(BaseAI):
             if len(attackables) > 0 and not scout.hasAttacked:
                 scout.attack(attackables[0])
                     
+        self.sw_lap("ScoutAI")
+        
         for tank in mytanks:
             def threat( unit, cpumps):
                 if unit and cpumps:
@@ -372,6 +418,10 @@ class AI(BaseAI):
             if len(attackables) > 0 and not tank.hasAttacked:
                 tank.attack(attackables[0])
                 break
+                
+        self.sw_lap("TankAI")
+        self.sw_stop()
+        self.sw_summary()
         
         return 1
 
