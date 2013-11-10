@@ -192,8 +192,9 @@ class AI(BaseAI):
         
         self.sw_lap("Dictionaries/Lists")
         
-        def expandglaciers(icecubes):
+        def expandglaciers(icecubes, fringe = False):
             flow = set()
+            fringe = set()
             openset = set()
             closedset = set()
             for ice in icecubes:
@@ -210,22 +211,24 @@ class AI(BaseAI):
                         flow.add( c )
                         if c not in closedset:
                             openset.add(c)
-            return flow
+                    else:
+                        fringe.add(c)
+            if not fringe:
+                return flow
+            return fringe
             
         self.sw_lap("GlacierExpansionFunc")
                 
         connectedmypumps = set()
         connectedenemypumps = set()
         
-        expandedice = expandglaciers(glaciers)
+        expandedice = expandglaciers(glaciers,fringe=True)
         for tile in expandedice:
-            adj = self.pf.adj[ tile ]
-            for adj in tilemap:
-                consider = tilemap[adj]
-                if consider.pumpID != -1 and consider.owner == self.playerID:
-                    connectedmypumps.add(consider)
-                elif consider.pumpID != -1 and consider.owner == self.enemyID:
-                    connectedenemypumps.add(consider)
+            consider = tilemap[tile]
+            if consider.pumpID != -1 and consider.owner == self.playerID:
+                connectedmypumps.add(consider)
+            elif consider.pumpID != -1 and consider.owner == self.enemyID:
+                connectedenemypumps.add(consider)
                     
         self.sw_lap("DetectingConnectedPumps")
         
