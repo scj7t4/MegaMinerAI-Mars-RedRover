@@ -165,15 +165,14 @@ class AI(BaseAI):
                 openset.add( c )       
             while len(openset) > 0:
                 consider = openset.pop()
-                if consider in closedset:
-                    continue
                 closedset.add(consider)
                 adjtiles = [ tilemap[ t ] for t in self.pf.adj[ consider ] if tilemap[ t ].owner != 3 ]
                 for adj in adjtiles:
                     if adj.depth > 1 or (adj.depth == 1 and adj.turnsUntilDeposit > 3):
                         c = (adj.x, adj.y)
                         flow.add( c )
-                        openset.add( c)
+                        if c not in closedset:
+                            openset.add(c)
             return flow
                 
             
@@ -262,9 +261,8 @@ class AI(BaseAI):
         while spawned_workers + len(myworkers) < self.MAX_WORKERS and spawnunit( self.WORKER, workerspawns):
             spawned_workers += 1
         
-        MAX_CONNECT = 15
-        digdests = set()
-        for _ in range(5):
+        if len(myworkers) > 0:
+            MAX_CONNECT = 300
             digdests = set()
             for icecube in glaciers:
                 expandedpumps = list(expandglaciers(mypumptiles))
@@ -281,11 +279,7 @@ class AI(BaseAI):
                     if tilemap[step].depth < self.CANALDEPTH:
                         digdests.add(step)
                         break
-            if len(digdests) < len(myworkers) * 2:
-                MAX_CONNECT += 10
-            else:
-                break
-            
+        
         for worker in myworkers:
             donesomething = False
             path = self.pf.astar(self, o2tuple([worker]), list(digdests), fearwater=True)
