@@ -20,7 +20,7 @@ class Pathfinder(object):
                 adj = [ (i+1,j) , (i-1,j) , (i,j+1), (i, j-1) ]
                 adj = [ c for c in adj if c[0] >= 0 and c[0] < mapwidth and c[1] >= 0 and c[1] < mapheight ]
                 self.adj[(i,j)] = adj
-    def astar(self, ai, starts, ends, bloomspawns=False, fearwater=False):
+    def astar(self, ai, starts, ends, fearwater=False, avoidowned=False):
         #TODO: Penalize Water
         openset = []
         closedset = {}
@@ -41,8 +41,8 @@ class Pathfinder(object):
         for tile in ai.tiles:
             if ( tile.owner == ai.enemyID
                     or tile.owner == 3
-                    or (tile.waterAmount > 0 and fearwater == True)):
-                    #                    or (tile.owner == ai.playerID 
+                    or (tile.waterAmount > 0 and fearwater == True)
+                    or (tile.owner == ai.playerID and avoidowned == True) ):
                 self.obstacles[(tile.x,tile.y)] = tile  
             """
             elif tile.owner == ai.enemyID or tile.owner == ai.playerID and tile.pumpID == -1 and bloomspawns and FAL:
@@ -112,9 +112,6 @@ class AI(BaseAI):
     def run(self):
         if self.turnNumber > 200:
             self.CANALDEPTH = 11
-    
-    
-        self.players[self.playerID].talk("ANARCHY!!!!!!!")
     
         print "Turn {}".format(self.turnNumber)
         
@@ -207,7 +204,7 @@ class AI(BaseAI):
             for icecube in glaciers:
                 expandedpumps = list(expandglaciers(mypumptiles))
                 expandedice = list(expandglaciers([ icecube ]))
-                r = self.pf.astar( self, expandedpumps, expandedice, bloomspawns = True)[:-1]
+                r = self.pf.astar( self, expandedpumps, expandedice, avoidowned= True)[:-1]
                 if len(r) > MAX_CONNECT:
                     continue
                 for step in r:
@@ -220,7 +217,7 @@ class AI(BaseAI):
                         digdests.add(step)
                         break
             if len(digdests) < len(myworkers) * 2:
-                MAX_CONNECT += 5
+                MAX_CONNECT += 10
             else:
                 break
             
