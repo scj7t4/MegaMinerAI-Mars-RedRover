@@ -191,8 +191,18 @@ class AI(BaseAI):
             for icecube in glaciers:
                 expandedice = expandglaciers([ icecube ])
                 if len(expandedice & expandedpumps):
-                    connectedmypumps.append(pt)        
-                    
+                    connectedmypumps.append(pt)
+
+        myconnectedstations = set()
+        enemyconnectedstations = set()
+        for c in connectedmypumps:
+            myconnectedstations.add(c.pumpID)
+        for c in connectedenemypumps:
+            enemyconnectedstations.add(c.pumpID)
+        
+        self.MAX_TANKS = min(2, len(myconnectedstations))
+        self.MAX_SCOUTS = (75 - self.MAX_TANKS * 15) / 12
+        self.MAX_WORKERS = 0
             
         if len(connectedmypumps) + len(connectedenemypumps) == 0:
             self.MAX_SCOUTS = 4
@@ -204,35 +214,53 @@ class AI(BaseAI):
         spawned_tanks = 0
         spawns = mypumptiles+myspawns
         spawns.sort(key=lambda ti: abs(ti.x- 20))
-        for tile in spawns:
-            #if this tile is my spawn tile or my pump station
-            #if there is enough oxygen to spawn the unit
-            if len(myunits) < self.maxUnits:
-                #if nothing is spawning on the tile
-                if tile.isSpawning == 0:
-                  canSpawn = True
-                  #if it is a pump station and it's not being sieged
-                  if tile.pumpID != -1:
-                    #find the pump in the vector
-                    for pump in self.pumpStations:
-                      if pump.id == tile.pumpID and pump.siegeAmount > 0:
-                        canSpawn = False
-                  #if there is someone else on the tile, don't spawn
-                  for other in self.units:
-                    if tile.x == other.x and tile.y == other.y:
-                      canSpawn = False
-                  if canSpawn:
-                    #spawn the unit
-                    if spawned_scouts + len(myscouts) < self.MAX_SCOUTS and self.players[self.playerID].oxygen >= self.WORKERCOST:
-                        tile.spawn(self.SCOUT)
-                        spawned_scouts += 1
-                    elif spawned_workers + len(myworkers) < self.MAX_WORKERS and self.players[self.playerID].oxygen >= self.SCOUTCOST:
-                        tile.spawn(self.WORKER)
-                        spawned_workers += 1
-                    elif spawned_tanks + len(mytanks) < self.MAX_TANKS and self.players[self.playerID].oxygen >= self.TANKCOST:
-                        tile.spawn(self.TANK)
-                        spawned_tanks += 1
-
+        
+        def spawnunit(type, spawnlist):
+            if len(spawnlist) == 0:
+                return False
+            for tile in spawnlist:
+                #if this tile is my spawn tile or my pump station
+                #if there is enough oxygen to spawn the unit
+                if len(myunits) < self.maxUnits:
+                    #if nothing is spawning on the tile
+                    if tile.isSpawning == 0:
+                      canSpawn = True
+                      #if it is a pump station and it's not being sieged
+                      if tile.pumpID != -1:
+                        #find the pump in the vector
+                        for pump in self.pumpStations:
+                          if pump.id == tile.pumpID and pump.siegeAmount > 0:
+                            canSpawn = False
+                      #if there is someone else on the tile, don't spawn
+                      for other in self.units:
+                        if tile.x == other.x and tile.y == other.y:
+                          canSpawn = False
+                      if canSpawn:
+                        #spawn the unit
+                        tile.spawn(type)
+                        return True
+            return False
+        
+        scoutspawns = mypumptiles + myspawns
+        if connectedenemypumps and scoutspawns:
+            scoutspawns.sort(key=lambda spwn: min( [ distance( (spwn.x, spwn.y), (ep.x,ep.y) ) for ep in connectedenemypumps ] ) )
+            
+        while spawned_scouts + len(myscouts) < self.MAX_SCOUTS and spawnunit( self.SCOUT, scoutspawns):
+            spawned_scouts += 1
+            
+        tankspawns = connectedmypumps
+        if connectedmypumps and mytanks:
+            tankspawns.sort(key=lambda spwn: max( [ distance( (spwn.x, spwn.y), (ep.x,ep.y) ) for ep in mytanks ] ) )
+            
+        while spawned_tanks + len(mytanks) < self.MAX_TANKS and spawnunit( self.TANK, tankspawns):
+            spawned_tanks += 1
+        
+        workerspawns = mypumptiles
+        if glaciers and mypumptiles:
+            workerspawns.sort(key=lambda spwn: min( [ distance( (spwn.x, spwn.y), (gc.x,gc.y) ) for gc in glaciers ] ) )
+        
+        while spawned_workers + len(myworkers) < self.MAX_WORKERS and spawnunit( self.WORKER, workerspawns):
+            spawned_workers += 1
         
         MAX_CONNECT = 15
         digdests = set()
@@ -293,10 +321,10 @@ class AI(BaseAI):
         for scout in myscouts:
             priority = [ t for t in enemyunits if t.healthLeft > 0 ]
             updateunitmap()
-            def connectchecker(c):
+            def connectchecker(tile):
                 try:
-                    occupy = self.unitmap[ (c.x,c.y) ]
-                    return occupy.id != scout.id and occupy.owner != self.playerID
+                    occupy = self.unitmap[ (tile.x,tile.y) ]
+                    return occupy.id == scout.id or occupy.owner != self.playerID
                 except KeyError:
                     return True
             ctiles = [ c for c in connectedenemypumps if connectchecker(c) ]  
@@ -322,29 +350,34 @@ class AI(BaseAI):
             if len(attackables) > 0 and not scout.hasAttacked:
                 scout.attack(attackables[0])
                     
-        for priority in [ enemyscouts + enemytanks, enemyworkers ]:
+        for tank in mytanks:
+            def threat( unit, cpumps):
+                if unit and cpumps:
+                    return min( [ distance( (unit.x, unit.y), (ct.x, ct.y) ) for ct in cpumps ] ) == 0
+                elif unit:
+                    return True
+                return False
+            
+            priority = [ t for t in enemyunits if t.healthLeft > 0  and threat(t, connectedmypumps) ]
             if len(priority) == 0:
-                continue
-            for tank in mytanks:
-                priority = [ t for t in priority if t.healthLeft > 0 ]
-                ctiles = [ c for c in mypumptiles if distance( (tank.x, tank.y), (c.x, c.y) ) != 0 and pumpdict[ c.pumpID ].siegeAmount > 0]
-                ontiles = [ (c.x,c.y) for c in mypumptiles if distance( (tank.x, tank.y), (c.x, c.y) ) == 0 and pumpdict[ c.pumpID ].siegeAmount > 0]
-                path = self.pf.astar(self, o2tuple([tank]), o2tuple(priority + ctiles) , fearwater=True)
-                if (tank.x, tank.y) in ontiles and len(path) > tank.movementLeft:
-                    path = []
-                for (x,y) in path:
-                    attackables = filter(lambda e: distance( (tank.x,tank.y), (e.x, e.y) ) == 1, priority)
-                    if len(attackables) > 0 and not tank.hasAttacked:
-                        tank.attack(attackables[0])
-                        break
-                    if tank.movementLeft > 0:
-                        tank.move( x,y )
-                    else:
-                        break
-                attackables = filter(lambda e: distance( (tank.x,tank.y), (e.x, e.y) ) == 1, priority)
+                path = self.pf.astar(self, o2tuple([tank]), o2tuple(connectedmypumps) , fearwater=True)
+            else:
+                path = self.pf.astar(self, o2tuple([tank]), o2tuple(priority) , fearwater=True)
+            
+            for (x,y) in path:
+                attackables = filter(lambda e: distance( (tank.x,tank.y), (e.x, e.y) ) == 1, enemyunits)
                 if len(attackables) > 0 and not tank.hasAttacked:
                     tank.attack(attackables[0])
                     break
+                if tank.movementLeft > 0:
+                    tank.move( x,y )
+                else:
+                    break
+                    
+            attackables = filter(lambda e: distance( (tank.x,tank.y), (e.x, e.y) ) == 1, enemyunits)
+            if len(attackables) > 0 and not tank.hasAttacked:
+                tank.attack(attackables[0])
+                break
         
         return 1
 
