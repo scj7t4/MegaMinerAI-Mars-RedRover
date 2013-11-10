@@ -76,8 +76,8 @@ class AI(BaseAI):
 
     WORKER, SCOUT, TANK = range(3)
     
-    MAX_WORKERS = 4
-    MAX_TANKS = 0
+    MAX_WORKERS = 3
+    MAX_TANKS = 1
     MAX_SCOUTS = 2
 
     @staticmethod
@@ -137,7 +137,15 @@ class AI(BaseAI):
         mypumps = [ p for p in self.pumpStations if t.owner == self.playerID ]
         enemypumps = [ p for p in self.pumpStations if t.owner == self.enemyID ]
       
-        glaciers = [ t for t in self.tiles if t.owner == 3 ]
+        glaciers = [ t for t in self.tiles if t.owner == 3  and t.waterAmount > 3 ]
+        
+        pumpdict = {}
+        for pump in self.pumpStations:
+            pumpdict[pump.id] = pump
+ 
+        if len(glaciers) == 0:
+            self.MAX_SCOUTS = 9999
+            self.MAX_WORKERS = 0
         
         tilemap = {}
         for t in self.tiles:
@@ -167,7 +175,9 @@ class AI(BaseAI):
         spawned_workers = 0
         spawned_scouts = 0
         spawned_tanks = 0
-        for tile in mypumptiles+myspawns:
+        spawns = mypumptiles+myspawns
+        spawns.sort(key=lambda ti: abs(ti.x- 20))
+        for tile in spawns:
             #if this tile is my spawn tile or my pump station
             #if there is enough oxygen to spawn the unit
             if len(myunits) < self.maxUnits:
@@ -222,13 +232,16 @@ class AI(BaseAI):
                 break
             
         for worker in myworkers:
+            donesomething = False
             path = self.pf.astar(self, o2tuple([worker]), list(digdests), fearwater=True)
             if len(path) == 0 and (worker.x,worker.y) in digdests:
                 worker.dig(tilemap[ (worker.x,worker.y) ])
+                donesomething = True
             while worker.movementLeft > 0 and len(path) > 0:        
                 (x,y) = path.pop(0)
                 if (x,y) not in digdests and worker.movementLeft > 0:
                     worker.move(x,y)
+                    donesomething = True
                 elif not worker.hasDug:
                     if worker.movementLeft:
                         d = [ coord for coord in self.pf.adj[ (x,y) ] if tilemap[coord].depth == 0 and tilemap[coord].owner != 3 and tilemap[coord].owner != self.enemyID ]
@@ -238,11 +251,15 @@ class AI(BaseAI):
                                 worker.move(xs,ys)
                     worker.dig(tilemap[(x,y)])
                     digdests.remove( (x,y) )
+                    donesomething = True
                 else: 
                     break
             attackables = filter(lambda e: distance( (worker.x,worker.y), (e.x, e.y) ) <= 3, enemyunits )
             if len(attackables) > 0 and not worker.hasAttacked:
                 worker.attack(attackables[0])
+            if donesomething == False:
+                myscouts.append(worker)
+            
             #if not worker.hasDug:
             #    worker.dig( tilemap[(worker.x,worker.y)] )
         
@@ -254,7 +271,7 @@ class AI(BaseAI):
                 ctiles = [ c for c in enemypumptiles if distance( (scout.x, scout.y), (c.x, c.y) ) != 0]
                 ontiles = [ (c.x,c.y) for c in enemypumptiles if distance( (scout.x, scout.y), (c.x, c.y) ) == 0]
                 path = self.pf.astar(self, o2tuple([scout]), o2tuple(priority + ctiles) , fearwater=True)
-                if (scout.x, scout.y) in ontiles and len(path) > 1:
+                if (scout.x, scout.y) in ontiles and len(path) > scout.movementLeft:
                     path = []
                 for (x,y) in path:
                     attackables = filter(lambda e: distance( (scout.x,scout.y), (e.x, e.y) ) == 1, priority)
@@ -269,6 +286,31 @@ class AI(BaseAI):
                 if len(attackables) > 0 and not scout.hasAttacked:
                     scout.attack(attackables[0])
                     break
+                    
+        for priority in [ enemyscouts + enemytanks, enemyworkers ]:
+            if len(priority) == 0:
+                continue
+            for tank in mytanks:
+                priority = [ t for t in priority if t.healthLeft > 0 ]
+                ctiles = [ c for c in mypumptiles if distance( (tank.x, tank.y), (c.x, c.y) ) != 0 and pumpdict[ c.pumpID ].siegeAmount > 0]
+                ontiles = [ (c.x,c.y) for c in mypumptiles if distance( (tank.x, tank.y), (c.x, c.y) ) == 0]
+                path = self.pf.astar(self, o2tuple([tank]), o2tuple(priority + ctiles) , fearwater=True)
+                if (tank.x, tank.y) in ontiles and len(path) > tank.movementLeft:
+                    path = []
+                for (x,y) in path:
+                    attackables = filter(lambda e: distance( (tank.x,tank.y), (e.x, e.y) ) == 1, priority)
+                    if len(attackables) > 0 and not tank.hasAttacked:
+                        tank.attack(attackables[0])
+                        break
+                    if tank.movementLeft > 0:
+                        tank.move( x,y )
+                    else:
+                        break
+                attackables = filter(lambda e: distance( (tank.x,tank.y), (e.x, e.y) ) == 1, priority)
+                if len(attackables) > 0 and not tank.hasAttacked:
+                    tank.attack(attackables[0])
+                    break
+        
         return 1
 
     def __init__(self, conn):
