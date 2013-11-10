@@ -148,6 +148,9 @@ class AI(BaseAI):
     def run(self):
         #if self.turnNumber > 200:
             #self.CANALDEPTH = 11
+            
+        if self.players[self.playerID].time < 3.0:
+            return 1
     
         print "Turn {} ({}s available)".format(self.turnNumber,self.players[self.playerID].time)
         self.sw_start()
