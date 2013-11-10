@@ -248,8 +248,6 @@ class AI(BaseAI):
         for c in enemyconnectedstations:
             connectedenemypumps += pumptilebyid[c]
             
-        print connectedmypumps
-            
         self.sw_lap("FilteringConnectedPumps")
         
         self.MAX_TANKS = 1 #min(2, len(myconnectedstations))
