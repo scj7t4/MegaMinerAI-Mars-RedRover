@@ -290,6 +290,15 @@ class AI(BaseAI):
                         tile.spawn(type)
                         return True
             return False
+            
+        tankspawns = connectedmypumps
+        if enemyunits and tankspawns:
+            tankspawns.sort(key=lambda spwn: min( [ distance( (spwn.x, spwn.y), (ep.x,ep.y) ) for ep in enemyunits ] ) )
+        elif tankspawns and enemypumptiles:
+            tankspawns.sort(key=lambda spwn: min( [ distance( (spwn.x, spwn.y), (ep.x,ep.y) ) for ep in enemypumptiles ] ) )
+            
+        while spawned_tanks + len(mytanks) < self.MAX_TANKS and spawnunit( self.TANK, tankspawns):
+            spawned_tanks += 1
         
         scoutspawns = mypumptiles + myspawns
         if connectedenemypumps and scoutspawns:
@@ -297,15 +306,7 @@ class AI(BaseAI):
             
         while spawned_scouts + len(myscouts) < self.MAX_SCOUTS and spawnunit( self.SCOUT, scoutspawns):
             spawned_scouts += 1
-            
-        tankspawns = connectedmypumps
-        if enemyunits and tankspawns:
-            tankspawns.sort(key=lambda spwn: min( [ distance( (spwn.x, spwn.y), (ep.x,ep.y) ) for ep in enemyunits ] ) )
-        elif tankspawns and enemypumps:
-            tankspawns.sort(key=lambda spwn: min( [ distance( (spwn.x, spwn.y), (ep.x,ep.y) ) for ep in enemypumps ] ) )
-            
-        while spawned_tanks + len(mytanks) < self.MAX_TANKS and spawnunit( self.TANK, tankspawns):
-            spawned_tanks += 1
+                
         
         workerspawns = mypumptiles
         if glaciers and mypumptiles:
