@@ -301,6 +301,8 @@ class AI(BaseAI):
         tankspawns = connectedmypumps
         if enemyunits and tankspawns:
             tankspawns.sort(key=lambda spwn: min( [ distance( (spwn.x, spwn.y), (ep.x,ep.y) ) for ep in enemyunits ] ) )
+        elif tankspawns and enemypumps:
+            tankspawns.sort(key=lambda spwn: min( [ distance( (spwn.x, spwn.y), (ep.x,ep.y) ) for ep in enemypumps ] ) )
             
         while spawned_tanks + len(mytanks) < self.MAX_TANKS and spawnunit( self.TANK, tankspawns):
             spawned_tanks += 1
