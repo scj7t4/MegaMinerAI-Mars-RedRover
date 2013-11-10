@@ -300,11 +300,11 @@ class AI(BaseAI):
         while spawned_scouts + len(myscouts) < self.MAX_SCOUTS and spawnunit( self.SCOUT, scoutspawns):
             spawned_scouts += 1
             
-        #tankspawns = connectedmypumps
-        #if connectedmypumps and mytanks:
-            #tankspawns.sort(key=lambda spwn: max( [ distance( (spwn.x, spwn.y), (ep.x,ep.y) ) for ep in mytanks ] ) )
+        tankspawns = connectedmypumps
+        if enemyunits and tankspawns:
+            tankspawns.sort(key=lambda spwn: min( [ distance( (spwn.x, spwn.y), (ep.x,ep.y) ) for ep in enemyunits ] ) )
             
-        while spawned_tanks + len(mytanks) < self.MAX_TANKS and spawnunit( self.TANK, scoutspawns):
+        while spawned_tanks + len(mytanks) < self.MAX_TANKS and spawnunit( self.TANK, tankspawns):
             spawned_tanks += 1
         
         workerspawns = mypumptiles
@@ -347,6 +347,7 @@ class AI(BaseAI):
                 except KeyError:
                     return True
             ctiles = [ c for c in connectedenemypumps if connectchecker(c) ] 
+            ctiles += [ c for c in connectedmypumps if pumpdict[c.pumpID].siegeAmount > 0 ]
             path = self.pf.astar(self, o2tuple([worker]), list(digdests)+o2tuple(ctiles), fearwater=True)
             if len(path) == 0 and (worker.x,worker.y) in digdests:
                 worker.dig(tilemap[ (worker.x,worker.y) ])
@@ -389,6 +390,7 @@ class AI(BaseAI):
                 except KeyError:
                     return True
             ctiles = [ c for c in connectedenemypumps if connectchecker(c) ]  
+            ctiles += [ c for c in connectedmypumps if pumpdict[c.pumpID].siegeAmount > 0 ]
             #ontiles = [ (c.x,c.y) for c in enemypumptiles if distance( (scout.x, scout.y), (c.x, c.y) ) == 0]
             attackingunit = False
             if len(ctiles) > 0:
