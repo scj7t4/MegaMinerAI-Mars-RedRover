@@ -39,8 +39,9 @@ class Pathfinder(object):
         #for (k,v) in self.obstacles.iteritems():
         #    print "{} -> {}".format(k,v.owner)
         for tile in ai.tiles:
-            if ( tile.owner == ai.enemyID
+            if ( (tile.owner == ai.enemyID and tile.pumpID == -1)
                     or tile.owner == 3
+                    or tile.isSpawning
                     or (tile.waterAmount > 0 and fearwater == True)
                     or (tile.owner == ai.playerID and avoidowned == True) ):
                 self.obstacles[(tile.x,tile.y)] = tile  
@@ -76,10 +77,7 @@ class AI(BaseAI):
 
     WORKER, SCOUT, TANK = range(3)
     
-    MAX_WORKERS = 3
-    MAX_TANKS = 1
-    MAX_SCOUTS = 2
-
+    
     @staticmethod
     def username():
         return "Red Rover"
@@ -100,6 +98,10 @@ class AI(BaseAI):
             elif u.type == self.TANK:
                 self.TANKCOST = u.cost
         self.CANALDEPTH = 6
+        self.MAX_WORKERS = 0
+        self.MAX_TANKS = 1
+        self.MAX_SCOUTS = 5
+
         pass
 
     ##This function is called once, after your last turn
@@ -142,14 +144,16 @@ class AI(BaseAI):
         pumpdict = {}
         for pump in self.pumpStations:
             pumpdict[pump.id] = pump
- 
-        if len(glaciers) == 0:
-            self.MAX_SCOUTS = 9999
-            self.MAX_WORKERS = 0
         
         tilemap = {}
         for t in self.tiles:
             tilemap[(t.x,t.y)] = t
+            
+        self.unitmap = {}
+        def updateunitmap():
+            for u in self.units:
+                self.unitmap[(u.x,u.y)] = u
+        updateunitmap()
         
         def expandglaciers(icecubes):
             flow = set()
@@ -171,6 +175,29 @@ class AI(BaseAI):
                         flow.add( c )
                         openset.add( c)
             return flow
+                
+            
+        connectedenemypumps = []
+        for ept in enemypumptiles:
+            expandedpumps = expandglaciers([ept])
+            for icecube in glaciers:
+                expandedice = expandglaciers([ icecube ])
+                if len(expandedice & expandedpumps):
+                    connectedenemypumps.append(ept)
+        
+        connectedmypumps = []
+        for pt in mypumptiles:
+            expandedpumps = expandglaciers([pt])
+            for icecube in glaciers:
+                expandedice = expandglaciers([ icecube ])
+                if len(expandedice & expandedpumps):
+                    connectedmypumps.append(pt)        
+                    
+            
+        if len(connectedmypumps) + len(connectedenemypumps) == 0:
+            self.MAX_SCOUTS = 4
+            self.MAX_WORKERS = 2
+            self.MAX_TANKS = 0
         
         spawned_workers = 0
         spawned_scouts = 0
@@ -263,29 +290,37 @@ class AI(BaseAI):
             #if not worker.hasDug:
             #    worker.dig( tilemap[(worker.x,worker.y)] )
         
-        for priority in [ enemyscouts + enemytanks, enemyworkers ]:
-            if len(priority) == 0:
-                continue
-            for scout in myscouts:
-                priority = [ t for t in priority if t.healthLeft > 0 ]
-                ctiles = [ c for c in enemypumptiles if distance( (scout.x, scout.y), (c.x, c.y) ) != 0]
-                ontiles = [ (c.x,c.y) for c in enemypumptiles if distance( (scout.x, scout.y), (c.x, c.y) ) == 0]
-                path = self.pf.astar(self, o2tuple([scout]), o2tuple(priority + ctiles) , fearwater=True)
-                if (scout.x, scout.y) in ontiles and len(path) > scout.movementLeft:
-                    path = []
-                for (x,y) in path:
-                    attackables = filter(lambda e: distance( (scout.x,scout.y), (e.x, e.y) ) == 1, priority)
-                    if len(attackables) > 0 and not scout.hasAttacked:
-                        scout.attack(attackables[0])
-                        break
-                    if scout.movementLeft > 0:
-                        scout.move( x,y )
-                    else:
-                        break
-                attackables = filter(lambda e: distance( (scout.x,scout.y), (e.x, e.y) ) == 1, priority)
-                if len(attackables) > 0 and not scout.hasAttacked:
-                    scout.attack(attackables[0])
+        for scout in myscouts:
+            priority = [ t for t in enemyunits if t.healthLeft > 0 ]
+            updateunitmap()
+            def connectchecker(c):
+                try:
+                    occupy = self.unitmap[ (c.x,c.y) ]
+                    return occupy.id != scout.id and occupy.owner != self.playerID
+                except KeyError:
+                    return True
+            ctiles = [ c for c in connectedenemypumps if connectchecker(c) ]  
+            #ontiles = [ (c.x,c.y) for c in enemypumptiles if distance( (scout.x, scout.y), (c.x, c.y) ) == 0]
+            attackingunit = False
+            if len(ctiles) > 0:
+                path = self.pf.astar(self, o2tuple([scout]), o2tuple(ctiles) , fearwater=True)
+            else:
+                attackingunit = True
+                path = self.pf.astar(self, o2tuple([scout]), o2tuple(priority) , fearwater=True)
+            #if (scout.x, scout.y) in ontiles and len(path) > scout.movementLeft:
+            #    path = []
+            for (x,y) in path:
+                #attackables = filter(lambda e: distance( (scout.x,scout.y), (e.x, e.y) ) == 1, priority)
+                #if len(attackables) > 0 and not scout.hasAttacked:
+                    #scout.attack(attackables[0])
+                    #break
+                if scout.movementLeft > 0 and (x,y) not in self.unitmap:
+                    scout.move( x,y )
+                else:
                     break
+            attackables = filter(lambda e: distance( (scout.x,scout.y), (e.x, e.y) ) == 1, priority)
+            if len(attackables) > 0 and not scout.hasAttacked:
+                scout.attack(attackables[0])
                     
         for priority in [ enemyscouts + enemytanks, enemyworkers ]:
             if len(priority) == 0:
