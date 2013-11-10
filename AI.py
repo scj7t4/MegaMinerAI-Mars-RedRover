@@ -241,9 +241,9 @@ class AI(BaseAI):
             
         self.sw_lap("FilteringConnectedPumps")
         
-        self.MAX_TANKS = min(2, len(myconnectedstations))
-        self.MAX_SCOUTS = (75 - self.MAX_TANKS * 15) / 12
-        self.MAX_WORKERS = 0
+        self.MAX_TANKS = 1 #min(2, len(myconnectedstations))
+        self.MAX_SCOUTS = 4 #(75 - self.MAX_TANKS * 15) / 12
+        self.MAX_WORKERS = 2
             
         if len(connectedmypumps) + len(connectedenemypumps) == 0:
             self.MAX_SCOUTS = 4
@@ -306,7 +306,7 @@ class AI(BaseAI):
         self.sw_lap("SpawnUnits")
         
         if len(myworkers) > 0:
-            MAX_CONNECT = 300
+            MAX_CONNECT = 20
             digdests = set()
             for icecube in glaciers:
                 expandedpumps = list(expandglaciers(mypumptiles))
@@ -373,7 +373,7 @@ class AI(BaseAI):
             #ontiles = [ (c.x,c.y) for c in enemypumptiles if distance( (scout.x, scout.y), (c.x, c.y) ) == 0]
             attackingunit = False
             if len(ctiles) > 0:
-                path = self.pf.astar(self, o2tuple([scout]), o2tuple(ctiles) , fearwater=True)
+                path = self.pf.astar(self, o2tuple([scout]), o2tuple(ctiles + enemyscouts + enemytanks) , fearwater=True)
             else:
                 attackingunit = True
                 path = self.pf.astar(self, o2tuple([scout]), o2tuple(priority) , fearwater=True)
@@ -394,34 +394,29 @@ class AI(BaseAI):
                     
         self.sw_lap("ScoutAI")
         
-        for tank in mytanks:
-            def threat( unit, cpumps):
-                if unit and cpumps:
-                    return min( [ distance( (unit.x, unit.y), (ct.x, ct.y) ) for ct in cpumps ] ) == 0
-                elif unit:
-                    return True
-                return False
-            
-            priority = [ t for t in enemyunits if t.healthLeft > 0  and threat(t, connectedmypumps) ]
+        for priority in [ enemyscouts + enemytanks, enemyworkers ]:
             if len(priority) == 0:
-                path = self.pf.astar(self, o2tuple([tank]), o2tuple(connectedmypumps) , fearwater=True)
-            else:
-                path = self.pf.astar(self, o2tuple([tank]), o2tuple(priority) , fearwater=True)
-            
-            for (x,y) in path:
-                attackables = filter(lambda e: distance( (tank.x,tank.y), (e.x, e.y) ) == 1, enemyunits)
+                continue
+            for tank in mytanks:
+                priority = [ t for t in priority if t.healthLeft > 0 ]
+                ctiles = [ c for c in mypumptiles if distance( (tank.x, tank.y), (c.x, c.y) ) != 0 and pumpdict[ c.pumpID ].siegeAmount > 0]
+                ontiles = [ (c.x,c.y) for c in mypumptiles if distance( (tank.x, tank.y), (c.x, c.y) ) == 0 and pumpdict[ c.pumpID ].siegeAmount > 0]
+                path = self.pf.astar(self, o2tuple([tank]), o2tuple(priority + ctiles) , fearwater=True)
+                if (tank.x, tank.y) in ontiles and len(path) > tank.movementLeft:
+                    path = []
+                for (x,y) in path:
+                    attackables = filter(lambda e: distance( (tank.x,tank.y), (e.x, e.y) ) == 1, priority)
+                    if len(attackables) > 0 and not tank.hasAttacked:
+                        tank.attack(attackables[0])
+                        break
+                    if tank.movementLeft > 0:
+                        tank.move( x,y )
+                    else:
+                        break
+                attackables = filter(lambda e: distance( (tank.x,tank.y), (e.x, e.y) ) == 1, priority)
                 if len(attackables) > 0 and not tank.hasAttacked:
                     tank.attack(attackables[0])
                     break
-                if tank.movementLeft > 0:
-                    tank.move( x,y )
-                else:
-                    break
-                    
-            attackables = filter(lambda e: distance( (tank.x,tank.y), (e.x, e.y) ) == 1, enemyunits)
-            if len(attackables) > 0 and not tank.hasAttacked:
-                tank.attack(attackables[0])
-                break
                 
         self.sw_lap("TankAI")
         self.sw_stop()
