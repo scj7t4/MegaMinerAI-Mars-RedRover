@@ -128,9 +128,9 @@ class AI(BaseAI):
     def sw_stop(self):
         te = datetime.today() - self.sw_run
         try:
-            self.sw_dict["turn time"].append(te)
+            self.sw_dict["TurnTime"].append(te)
         except:
-            self.sw_dict["turn time"] = [te]
+            self.sw_dict["TurnTime"] = [te]
             
     def sw_summary(self):
         try:
@@ -149,7 +149,7 @@ class AI(BaseAI):
         if self.turnNumber > 200:
             self.CANALDEPTH = 11
     
-        print "Turn {}".format(self.turnNumber)
+        print "Turn {} ({}s available)".format(self.turnNumber,self.players[self.playerID].time)
         self.sw_start()
         
         path = self.pf.astar(self,[ (0,0) ], [ (5,5) ])
@@ -211,6 +211,8 @@ class AI(BaseAI):
                         if c not in closedset:
                             openset.add(c)
             return flow
+            
+        self.sw_lap("GlacierExpansionFunc")
                 
         connectedmypumps = set()
         connectedenemypumps = set()
@@ -224,6 +226,8 @@ class AI(BaseAI):
                     connectedmypumps.add(consider)
                 elif consider.pumpID != -1 and consider.owner == self.enemyID:
                     connectedenemypumps.add(consider)
+                    
+        self.sw_lap("DetectingConnectedPumps")
         
         connectedmypumps = list(connectedmypumps)
         connectedenemypumps = list(connectedenemypumps)
@@ -235,7 +239,7 @@ class AI(BaseAI):
         for c in connectedenemypumps:
             enemyconnectedstations.add(c.pumpID)
             
-        self.sw_lap("DetectingConnectedPumps")
+        self.sw_lap("FilteringConnectedPumps")
         
         self.MAX_TANKS = min(2, len(myconnectedstations))
         self.MAX_SCOUTS = (75 - self.MAX_TANKS * 15) / 12
