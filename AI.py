@@ -146,8 +146,8 @@ class AI(BaseAI):
   ##This function is called each time it is your turn
   ##Return true to end your turn, return false to ask the server for updated information
     def run(self):
-        if self.turnNumber > 200:
-            self.CANALDEPTH = 11
+        #if self.turnNumber > 200:
+            #self.CANALDEPTH = 11
     
         print "Turn {} ({}s available)".format(self.turnNumber,self.players[self.playerID].time)
         self.sw_start()
@@ -180,9 +180,16 @@ class AI(BaseAI):
         for pump in self.pumpStations:
             pumpdict[pump.id] = pump
         
+        pumptilebyid = {}
+        
         tilemap = {}
         for t in self.tiles:
             tilemap[(t.x,t.y)] = t
+            if t.pumpID != -1:
+                try:
+                    pumptilebyid[t.pumpID].append(t)
+                except KeyError:
+                    pumptilebyid[t.pumpID] = [t]
             
         self.unitmap = {}
         def updateunitmap():
@@ -192,9 +199,8 @@ class AI(BaseAI):
         
         self.sw_lap("Dictionaries/Lists")
         
-        def expandglaciers(icecubes, fringe = False):
+        def expandglaciers(icecubes):
             flow = set()
-            fringe = set()
             openset = set()
             closedset = set()
             for ice in icecubes:
@@ -211,41 +217,40 @@ class AI(BaseAI):
                         flow.add( c )
                         if c not in closedset:
                             openset.add(c)
-                    else:
-                        fringe.add(c)
-            if not fringe:
-                return flow
-            return fringe
+            return flow
             
         self.sw_lap("GlacierExpansionFunc")
                 
-        connectedmypumps = set()
-        connectedenemypumps = set()
+        connectedmypumps = []
+        connectedenemypumps = []
         
-        expandedice = expandglaciers(glaciers,fringe=True)
+        myconnectedstations = set()
+        enemyconnectedstations = set()
+        
+        expandedice = expandglaciers(glaciers)
+        
         for tile in expandedice:
-            consider = tilemap[tile]
-            if consider.pumpID != -1 and consider.owner == self.playerID:
-                connectedmypumps.add(consider)
-            elif consider.pumpID != -1 and consider.owner == self.enemyID:
-                connectedenemypumps.add(consider)
+            adj = self.pf.adj[ tile ]
+            for cell in adj:
+                consider = tilemap[cell]
+                if consider.pumpID != -1 and consider.owner == self.playerID:
+                    myconnectedstations.add(consider.pumpID)
+                elif consider.pumpID != -1 and consider.owner == self.enemyID:
+                    enemyconnectedstations.add(consider.pumpID)               
                     
         self.sw_lap("DetectingConnectedPumps")
         
-        connectedmypumps = list(connectedmypumps)
-        connectedenemypumps = list(connectedenemypumps)
-
-        myconnectedstations = set()
-        enemyconnectedstations = set()
-        for c in connectedmypumps:
-            myconnectedstations.add(c.pumpID)
-        for c in connectedenemypumps:
-            enemyconnectedstations.add(c.pumpID)
+        for c in myconnectedstations:
+            connectedmypumps += pumptilebyid[c]
+        for c in enemyconnectedstations:
+            connectedenemypumps += pumptilebyid[c]
+            
+        print connectedmypumps
             
         self.sw_lap("FilteringConnectedPumps")
         
         self.MAX_TANKS = 1 #min(2, len(myconnectedstations))
-        self.MAX_SCOUTS = 4 #(75 - self.MAX_TANKS * 15) / 12
+        self.MAX_SCOUTS = 3 #(75 - self.MAX_TANKS * 15) / 12
         self.MAX_WORKERS = 2
             
         if len(connectedmypumps) + len(connectedenemypumps) == 0:
@@ -292,11 +297,11 @@ class AI(BaseAI):
         while spawned_scouts + len(myscouts) < self.MAX_SCOUTS and spawnunit( self.SCOUT, scoutspawns):
             spawned_scouts += 1
             
-        tankspawns = connectedmypumps
-        if connectedmypumps and mytanks:
-            tankspawns.sort(key=lambda spwn: max( [ distance( (spwn.x, spwn.y), (ep.x,ep.y) ) for ep in mytanks ] ) )
+        #tankspawns = connectedmypumps
+        #if connectedmypumps and mytanks:
+            #tankspawns.sort(key=lambda spwn: max( [ distance( (spwn.x, spwn.y), (ep.x,ep.y) ) for ep in mytanks ] ) )
             
-        while spawned_tanks + len(mytanks) < self.MAX_TANKS and spawnunit( self.TANK, tankspawns):
+        while spawned_tanks + len(mytanks) < self.MAX_TANKS and spawnunit( self.TANK, scoutspawns):
             spawned_tanks += 1
         
         workerspawns = mypumptiles
@@ -309,10 +314,10 @@ class AI(BaseAI):
         self.sw_lap("SpawnUnits")
         
         if len(myworkers) > 0:
-            MAX_CONNECT = 20
+            MAX_CONNECT = 15
             digdests = set()
+            expandedpumps = list(expandglaciers(mypumptiles))
             for icecube in glaciers:
-                expandedpumps = list(expandglaciers(mypumptiles))
                 expandedice = list(expandglaciers([ icecube ]))
                 r = self.pf.astar( self, expandedpumps, expandedice, avoidowned= True)[:-1]
                 if len(r) > MAX_CONNECT:
@@ -331,7 +336,15 @@ class AI(BaseAI):
         
         for worker in myworkers:
             donesomething = False
-            path = self.pf.astar(self, o2tuple([worker]), list(digdests), fearwater=True)
+            updateunitmap()
+            def connectchecker(tile):
+                try:
+                    occupy = self.unitmap[ (tile.x,tile.y) ]
+                    return occupy.id == worker.id or occupy.owner != self.playerID
+                except KeyError:
+                    return True
+            ctiles = [ c for c in connectedenemypumps if connectchecker(c) ] 
+            path = self.pf.astar(self, o2tuple([worker]), list(digdests)+o2tuple(ctiles), fearwater=True)
             if len(path) == 0 and (worker.x,worker.y) in digdests:
                 worker.dig(tilemap[ (worker.x,worker.y) ])
                 donesomething = True
