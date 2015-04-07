@@ -1,4 +1,4 @@
-mars-red-rover
-==============
+MegaMinerAI-mars
+================
 
-Sig-Game Fall 2013 First Place Entry: Red Rover.
+Sig-Game's MegaMinerAI Fall 2013 First Place Entry: Red Rover.
